@@ -1,0 +1,32 @@
+# Ignore Blender autosaves and temp files
+*.blend1
+*.blend2
+*.blend@
+*.blend~
+*.swp
+*.swo
+
+# Ignore Python cache and compiled files
+__pycache__/
+*.pyc
+*.pyo
+
+# Ignore IDE/editor configs ==
+.vscode/
+.idea/
+
+# Ignore general logs, backups, and misc
+*.log
+*.tmp
+*.bak
+.DS_Store
+
+# Ignore all data folder contents
+data/*
+
+# Allow only the example subfolder and its contents
+!data/example/
+!data/example/**
+
+# Ignore the dataset generation script
+render_polycube_dataset.py
