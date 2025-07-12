@@ -28,5 +28,9 @@ data/*
 !data/example/
 !data/example/**
 
+# Allow data processing files
+!data/pair_generator.py
+!data/data_loader.py
+
 # Ignore the dataset generation script
 render_polycube_dataset.py
