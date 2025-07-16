@@ -1,92 +1,59 @@
-# pair_generator.py
-# ------------------
-# Generates image pairs for training a classification model
-# - Reads metadata.jsonl
-# - Creates:
-#     - Positive pairs: same shape_id, different views
-#     - Negative pairs: different shape_ids
-# - Saves output as pairs.jsonl/csv with:
-#     - img1, img2, label (1 for same object, 0 for different)
+import pandas as pd
+from torchvision import transforms
+from PIL import Image
 
-import json
-import random
-from collections import defaultdict
+import torch
 
-INPUT_FILE = "example/training/metadata.jsonl"
-OUTPUT_JSONL = "pairs.jsonl"
-NEGATIVE_SAMPLES_PER_POSITIVE = 1  # Number of negative pairs per positive
+INPUT_FILE = "/content/drive/MyDrive/Colab Notebooks/Machine Learning Projects/FrameShift/pairs.jsonl"
 
-def read_metadata(file_path):
-    items = []
-    with open(file_path, 'r') as f:
-        for line in f:
-            item = json.loads(line)
-            items.append(item)
-    return items
+# data_loader.py
+# ----------------
+# PyTorch Dataset class for loading image pairs and their labels.
+# - Reads pairs.jsonl/csv
+# - Loads and preprocesses both images (img1, img2)
+# - Returns:
+#     - (img1_tensor, img2_tensor, label) for each sample
+# - Standard transforms: resize, normalize, etc.
 
-def group_by_shape_id(items):
-    shape_dict = defaultdict(list)
-    for item in items:
-        shape_dict[item['shape_id']].append(item)
-    return shape_dict
+# preprocess image for resnet: https://pytorch.org/hub/pytorch_vision_resnet/
+df = pd.read_json(INPUT_FILE, lines=True)
 
-def generate_positive_pairs(shape_dict):
-    positives = []
-    for shape_id, imgs in shape_dict.items():
-        if len(imgs) < 2:
-            continue
-        for i in range(len(imgs)):
-            for j in range(i + 1, len(imgs)):
-                if imgs[i]['view_id'] != imgs[j]['view_id']:
-                    positives.append({
-                        "img1": imgs[i]['filename'],
-                        "img2": imgs[j]['filename'],
-                        "label": 1
-                    })
-    return positives
+def preprocess_imgs(img1, img2):
+    preprocess = transforms.Compose([
+        transforms.Resize(256),
+        transforms.CenterCrop(224),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+    ])
 
-def generate_negative_pairs(items, positives, count_per_positive=1):
-    negatives = []
-    shape_id_to_items = defaultdict(list)
-    for item in items:
-        shape_id_to_items[item['shape_id']].append(item)
+    return preprocess(Image.open(img1).convert('RGB')), preprocess(Image.open(img2).convert('RGB'))
+  
 
-    shape_ids = list(shape_id_to_items.keys())
+def get_image_tensors(path1, path2, img1, img2):
+  matches = df[df['img1'] == img1]
 
-    for _ in range(len(positives) * count_per_positive):
-        shape_id1, shape_id2 = random.sample(shape_ids, 2)
-        img1 = random.choice(shape_id_to_items[shape_id1])
-        img2 = random.choice(shape_id_to_items[shape_id2])
-
-        negatives.append({
-            "img1": img1['filename'],
-            "img2": img2['filename'],
-            "label": 0
-        })
-    return negatives
-
-def save_jsonl(pairs, output_file):
-    with open(output_file, 'w') as f:
-        for pair in pairs:
-            f.write(json.dumps(pair) + '\n')
+  if not matches.empty:
+    if(matches.iloc[0]["img2"] != img2):
+      print("Invalid pair")
+      return []
+    return_array = []
+    return_array.append(preprocess_imgs(path1, path2))
+    return_array.append(matches.iloc[0]['label'])
+    return return_array
+  else:
+    print("No matching rows found")
+    return []
 
 def main():
-    print(f"Reading metadata from {INPUT_FILE}...")
-    items = read_metadata(INPUT_FILE)
-    print(f"Found {len(items)} metadata entries.")
+    img1 = "shape0_view4_rx90_ry90_rz0.png"
+    img2 = "shape6_view5_rx0_ry90_rz90.png"
 
-    shape_dict = group_by_shape_id(items)
-    positives = generate_positive_pairs(shape_dict)
-    print(f"Generated {len(positives)} positive pairs.")
+    path1 = "/content/drive/MyDrive/Colab Notebooks/Machine Learning Projects/FrameShift/shape0_view4_rx90_ry90_rz0.png"
+    path2 = "/content/drive/MyDrive/Colab Notebooks/Machine Learning Projects/FrameShift/shape6_view5_rx0_ry90_rz90.png"
 
-    negatives = generate_negative_pairs(items, positives, NEGATIVE_SAMPLES_PER_POSITIVE)
-    print(f"Generated {len(negatives)} negative pairs.")
-    all_pairs = positives + negatives
-    random.shuffle(all_pairs)
+    # gets tensors for one pair.
+    return_array = get_image_tensors(path1, path2, img1, img2)
+    # print(return_array[0])
+    # print(return_array[1])
 
-    print(f"Saving {len(all_pairs)} pairs to {OUTPUT_JSONL}...")
-    save_jsonl(all_pairs, OUTPUT_JSONL)
-    print("Done.")
-
-if __name__ == "__main__":
-    main()
+    # note that the first index in return_array are the tensors, and the second index in the array is the label
