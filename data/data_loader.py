@@ -6,7 +6,7 @@ from PIL import Image
 
 import torch
 
-INPUT_FILE = "/content/drive/MyDrive/Colab Notebooks/Machine Learning Projects/FrameShift/pairs.jsonl"
+INPUT_FILE = "pairs.jsonl"
 
 # data_loader.py
 # ----------------
