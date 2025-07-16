@@ -13,7 +13,7 @@ import random
 from collections import defaultdict
 
 INPUT_FILE = "example/training/metadata.jsonl"
-OUTPUT_JSONL = "pairs.jsonl"
+OUTPUT_JSONL = "example/training/pairs.jsonl"
 NEGATIVE_SAMPLES_PER_POSITIVE = 1  # Number of negative pairs per positive
 
 def read_metadata(file_path):
