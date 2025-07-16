@@ -12,81 +12,81 @@ import json
 import random
 from collections import defaultdict
 
-INPUT_FILE = "example/training/metadata.jsonl"
-OUTPUT_JSONL = "example/training/pairs.jsonl"
-NEGATIVE_SAMPLES_PER_POSITIVE = 1  # Number of negative pairs per positive
 
-def read_metadata(file_path):
-    items = []
-    with open(file_path, 'r') as f:
-        for line in f:
-            item = json.loads(line)
-            items.append(item)
-    return items
+class PairGen:
+    def __init__(self, input_file, output_file, neg_samples_per_pos):
+        self.INPUT_FILE = input_file
+        self.OUTPUT_JSONL = output_file
+        self.NEGATIVE_SAMPLES_PER_POSITIVE = neg_samples_per_pos
 
-def group_by_shape_id(items):
-    shape_dict = defaultdict(list)
-    for item in items:
-        shape_dict[item['shape_id']].append(item)
-    return shape_dict
+    def read_metadata(self, file_path):
+        items = []
+        with open(file_path, 'r') as f:
+            for line in f:
+                item = json.loads(line)
+                items.append(item)
+        return items
 
-def generate_positive_pairs(shape_dict):
-    positives = []
-    for shape_id, imgs in shape_dict.items():
-        if len(imgs) < 2:
-            continue
-        for i in range(len(imgs)):
-            for j in range(i + 1, len(imgs)):
-                if imgs[i]['view_id'] != imgs[j]['view_id']:
-                    positives.append({
-                        "img1": imgs[i]['filename'],
-                        "img2": imgs[j]['filename'],
-                        "label": 1
-                    })
-    return positives
+    def group_by_shape_id(self, items):
+        shape_dict = defaultdict(list)
+        for item in items:
+            shape_dict[item['shape_id']].append(item)
+        return shape_dict
 
-def generate_negative_pairs(items, positives, count_per_positive=1):
-    negatives = []
-    shape_id_to_items = defaultdict(list)
-    for item in items:
-        shape_id_to_items[item['shape_id']].append(item)
+    def generate_positive_pairs(self, shape_dict):
+        positives = []
+        for shape_id, imgs in shape_dict.items():
+            if len(imgs) < 2:
+                continue
+            for i in range(len(imgs)):
+                for j in range(i + 1, len(imgs)):
+                    if imgs[i]['view_id'] != imgs[j]['view_id']:
+                        positives.append({
+                            "img1": imgs[i]['filename'],
+                            "img2": imgs[j]['filename'],
+                            "label": 1
+                        })
+        return positives
 
-    shape_ids = list(shape_id_to_items.keys())
+    def generate_negative_pairs(self, items, positives, count_per_positive=1):
+        negatives = []
+        shape_id_to_items = defaultdict(list)
+        for item in items:
+            shape_id_to_items[item['shape_id']].append(item)
 
-    for _ in range(len(positives) * count_per_positive):
-        shape_id1, shape_id2 = random.sample(shape_ids, 2)
-        img1 = random.choice(shape_id_to_items[shape_id1])
-        img2 = random.choice(shape_id_to_items[shape_id2])
+        shape_ids = list(shape_id_to_items.keys())
 
-        negatives.append({
-            "img1": img1['filename'],
-            "img2": img2['filename'],
-            "label": 0
-        })
-    return negatives
+        for _ in range(len(positives) * count_per_positive):
+            shape_id1, shape_id2 = random.sample(shape_ids, 2)
+            img1 = random.choice(shape_id_to_items[shape_id1])
+            img2 = random.choice(shape_id_to_items[shape_id2])
 
-def save_jsonl(pairs, output_file):
-    with open(output_file, 'w') as f:
-        for pair in pairs:
-            f.write(json.dumps(pair) + '\n')
+            negatives.append({
+                "img1": img1['filename'],
+                "img2": img2['filename'],
+                "label": 0
+            })
+        return negatives
 
-def main():
-    print(f"Reading metadata from {INPUT_FILE}...")
-    items = read_metadata(INPUT_FILE)
-    print(f"Found {len(items)} metadata entries.")
+    def save_jsonl(self, pairs, output_file):
+        with open(output_file, 'w') as f:
+            for pair in pairs:
+                f.write(json.dumps(pair) + '\n')
 
-    shape_dict = group_by_shape_id(items)
-    positives = generate_positive_pairs(shape_dict)
-    print(f"Generated {len(positives)} positive pairs.")
+    def run(self):
+        print(f"Reading metadata from {self.INPUT_FILE}...")
+        items = self.read_metadata(self.INPUT_FILE)
+        print(f"Found {len(items)} metadata entries.")
 
-    negatives = generate_negative_pairs(items, positives, NEGATIVE_SAMPLES_PER_POSITIVE)
-    print(f"Generated {len(negatives)} negative pairs.")
-    all_pairs = positives + negatives
-    random.shuffle(all_pairs)
+        shape_dict = self.group_by_shape_id(items)
+        positives = self.generate_positive_pairs(shape_dict)
+        print(f"Generated {len(positives)} positive pairs.")
 
-    print(f"Saving {len(all_pairs)} pairs to {OUTPUT_JSONL}...")
-    save_jsonl(all_pairs, OUTPUT_JSONL)
-    print("Done.")
+        negatives = self.generate_negative_pairs(items, positives, self.NEGATIVE_SAMPLES_PER_POSITIVE)
+        print(f"Generated {len(negatives)} negative pairs.")
+        all_pairs = positives + negatives
+        random.shuffle(all_pairs)
 
-if __name__ == "__main__":
-    main()
+        print(f"Saving {len(all_pairs)} pairs to {self.OUTPUT_JSONL}...")
+        self.save_jsonl(all_pairs, self.OUTPUT_JSONL)
+        print("Done.")
