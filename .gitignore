@@ -34,3 +34,5 @@ data/*
 
 # Ignore the dataset generation script
 render_polycube_dataset.py
+
+pairs.jsonl
