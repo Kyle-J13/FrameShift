@@ -17,48 +17,54 @@ INPUT_FILE = "pairs.jsonl"
 #     - (img1_tensor, img2_tensor, label) for each sample
 # - Standard transforms: resize, normalize, etc.
 
-# preprocess image for resnet: https://pytorch.org/hub/pytorch_vision_resnet/
-df = pd.read_json(INPUT_FILE, lines=True)
+# !pip install torch torchvision torchaudio --quiet
 
-def preprocess_imgs(img1, img2):
-    preprocess = transforms.Compose([
+import pandas as pd
+import os
+import torch
+from torchvision import transforms
+from PIL import Image
+from torch.utils.data import Dataset
+
+INPUT_FILE = "pairs.jsonl"
+IMAGE_DIR = "example/training/"
+
+class ShapePairDataset(Dataset):
+  def __init__(self, pairs_file = INPUT_FILE, image_dir = IMAGE_DIR, transform = None):
+
+    # preprocess image for resnet: https://pytorch.org/hub/pytorch_vision_resnet/
+    self.df = pd.read_json(pairs_file, lines=True)
+
+    self.transform = transform or transforms.Compose([
         transforms.Resize(256),
         transforms.CenterCrop(224),
         transforms.ToTensor(),
         transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
     ])
 
-    return preprocess(Image.open(img1).convert('RGB')), preprocess(Image.open(img2).convert('RGB'))
+  def __len__(self):
+    return len(self.df)
 
-df.head()
+  def get_image_tensors(self, idx):
+    # Retrieve the row corresponding to the given index
+    row = self.df.iloc[idx]
 
-num_features = df.shape[1]
-num_features
+    # Construct full file paths to both images
+    img1_path = os.path.join(self.image_dir,row['img1'])
+    img2_path = os.path.join(self.image_dir,row['img2'])
 
-def get_image_tensors(path1, path2, img1, img2):
-  matches = df[df['img1'] == img1]
+    # Read the label and convert it to a float tensor
+    label = torch.tensor(row['label'], dtype=torch.float32)
 
-  if not matches.empty:
-    if(matches.iloc[0]["img2"] != img2):
-      print("Invalid pair")
-      return []
-    return_array = []
-    return_array.append(preprocess_imgs(path1, path2))
-    return_array.append(matches.iloc[0]['label'])
-    return return_array
-  else:
-    print("No matching rows found")
-    return []
+    # Open both images and convert them to RGB format
+    img1 = Image.open(img1_path).convert('RGB')
+    img2 = Image.open(img2_path).convert('RGB')
 
-img1 = "shape0_view4_rx90_ry90_rz0.png"
-img2 = "shape6_view5_rx0_ry90_rz90.png"
+    # Apply the transforms
+    img1 = self.transform(img1)
+    img2 = self.transform(img2)
 
-path1 = "/content/drive/MyDrive/Colab Notebooks/Machine Learning Projects/FrameShift/shape0_view4_rx90_ry90_rz0.png"
-path2 = "/content/drive/MyDrive/Colab Notebooks/Machine Learning Projects/FrameShift/shape6_view5_rx0_ry90_rz90.png"
+    return img1, img2, label
 
-# gets tensors for one pair.
-return_array = get_image_tensors(path1, path2, img1, img2)
-# print(return_array[0])
-# print(return_array[1])
 
 # note that the first index in return_array are the tensors, and the second index in the array is the label
