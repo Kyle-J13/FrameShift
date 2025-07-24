@@ -30,11 +30,9 @@ INPUT_FILE = "pairs.jsonl"
 IMAGE_DIR = "example/training/"
 
 class ShapePairDataset(Dataset):
-  def __init__(self, pairs_file = INPUT_FILE, image_dir = IMAGE_DIR, transform = None):
-
-    # preprocess image for resnet: https://pytorch.org/hub/pytorch_vision_resnet/
+  def __init__(self, pairs_file=INPUT_FILE, image_dir=IMAGE_DIR, transform=None):
     self.df = pd.read_json(pairs_file, lines=True)
-
+    self.image_dir = image_dir  # <-- THIS LINE WAS MISSING
     self.transform = transform or transforms.Compose([
         transforms.Resize(256),
         transforms.CenterCrop(224),
@@ -45,7 +43,7 @@ class ShapePairDataset(Dataset):
   def __len__(self):
     return len(self.df)
 
-  def get_image_tensors(self, idx):
+  def __getitem__(self, idx):
     # Retrieve the row corresponding to the given index
     row = self.df.iloc[idx]
 
