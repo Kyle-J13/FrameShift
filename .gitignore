@@ -36,3 +36,5 @@ data/*
 render_polycube_dataset.py
 
 pairs.jsonl
+
+checkpoints/
