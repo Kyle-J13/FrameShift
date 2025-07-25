@@ -37,4 +37,5 @@ render_polycube_dataset.py
 
 pairs.jsonl
 
-checkpoints/
+# Ignore checkpoints folder and all contents
+train/checkpoints/*
