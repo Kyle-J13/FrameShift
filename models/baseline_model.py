@@ -41,8 +41,8 @@ class SiameseResNet(nn.Module):
 
     def forward(self, img1, img2):
         # Pass both images through the shared encoder
-        feat1 = self.encoder(img1).squeeze()  # shape: (batch, 512)
-        feat2 = self.encoder(img2).squeeze() # shape: (batch, 512)
+        feat1 = self.encoder(img1).view(img1.size(0), -1)  # shape: (batch, 512)
+        feat2 = self.encoder(img2).view(img2.size(0), -1)  # shape: (batch, 512)
 
         # Concatenate features 
         combined = torch.cat((feat1, feat2), dim=1)  # shape: (batch, 1024)
