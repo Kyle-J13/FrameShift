@@ -33,7 +33,7 @@ class Trainer:
         image_dir,            
         batch_size=32,
         num_epochs=10,
-        learning_rate=1e-4,
+        learning_rate=0.0001,
         checkpoint_dir='checkpoints',
         device=None
     ):

@@ -1,5 +1,6 @@
 # baseline_control.py
 # -------------------
+# Control script for data preprocessing and model training for our baseline
 # - Splits metadata into train/test sets (if not already split)
 # - Generates positive/negative pairs (if not already generated)
 # - Trains or resumes training the baseline model

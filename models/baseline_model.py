@@ -4,7 +4,7 @@
 # - Two ResNet branches with shared weights
 # - Extracts feature embeddings from each input image
 # - Combines features (concatenation)
-# - Passes through a classifier (MLP with sigmoid maybe)
+# - Passes through a classifier (MLP with sigmoid)
 # - Outputs prediction
 
 
