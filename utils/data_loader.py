@@ -1,11 +1,18 @@
 # data_loader.py
-# ----------------
-# PyTorch Dataset class for loading image pairs and their labels.
-# - Reads pairs.jsonl/csv
-# - Loads and preprocesses both images (img1, img2)
-# - Returns:
-#     - (img1_tensor, img2_tensor, label) for each sample
-# - Standard transforms: resize, normalize, etc.
+# --------------
+# Dataset for loading image pairs for similarity or distance learning.
+#
+# Overview:
+# Loads (img1, img2, label[, distance]) from a JSONL file of shape pairs.
+# Applies standard preprocessing for use in Siamese or relational networks.
+#
+# Description:
+# - Reads a JSONL with keys: img1, img2, label, and optionally distance
+# - Returns image tensors and labels (optionally distance) per sample
+#
+# Example:
+#   dataset = ShapePairDataset("pairs.jsonl", "data/raw", return_distance=True)
+#   loader = DataLoader(dataset, batch_size=64, shuffle=True)
 
 import os
 import pandas as pd
@@ -14,18 +21,24 @@ from torchvision import transforms
 from PIL import Image
 from torch.utils.data import Dataset
 
+
 class ShapePairDataset(Dataset):
-    def __init__(self, pairs_file, image_dir, transform=None):
-        """
-        pairs_file: path to JSONL with columns 'img1','img2','label'
-        image_dir:  directory containing the image files
-        transform:  optional torchvision transforms to apply
-        """
-        # Load all pair records
+
+    def __init__(self, pairs_file, image_dir, transform=None, return_distance=False):
+        # Args:
+        #   pairs_file (str): Path to JSONL file with 'img1', 'img2', 'label'[, 'distance']
+        #   image_dir (str): Directory containing image files
+        #   transform (callable, optional): Torchvision transform pipeline
+        #   return_distance (bool): If True, include 'distance' in each sample
+        #
+        # Returns:
+        #   Dataset yielding:
+        #     (img1_tensor, img2_tensor, label) or
+        #     (img1_tensor, img2_tensor, label, distance)
         self.df = pd.read_json(pairs_file, lines=True)
         self.image_dir = image_dir
+        self.return_distance = return_distance
 
-        # preprocess image for resnet: https://pytorch.org/hub/pytorch_vision_resnet/
         self.transform = transform or transforms.Compose([
             transforms.Resize(256),
             transforms.CenterCrop(224),
@@ -37,29 +50,32 @@ class ShapePairDataset(Dataset):
         ])
 
     def __len__(self):
+        # Returns:
+        #   int: Total number of samples
         return len(self.df)
 
     def __getitem__(self, idx):
-        # Retrieve the row corresponding to the given index
+        # Args:
+        #   idx (int): Index of the sample to load
+        #
+        # Returns:
+        #   tuple: (img1_tensor, img2_tensor, label) or
+        #          (img1_tensor, img2_tensor, label, distance)
         row = self.df.iloc[idx]
 
-        # Construct full file paths to both images
         img1_path = os.path.join(self.image_dir, row['img1'])
         img2_path = os.path.join(self.image_dir, row['img2'])
 
-        # Open both images and convert to RGB format
         img1 = Image.open(img1_path).convert('RGB')
         img2 = Image.open(img2_path).convert('RGB')
 
-        # Apply the transforms
         img1 = self.transform(img1)
         img2 = self.transform(img2)
 
-        # Read the label and convert it to a float tensor
         label = torch.tensor(row['label'], dtype=torch.float32)
 
-        return img1, img2, label
-
-# Note:
-#   dataset = ShapePairDataset("pairs.jsonl", "path/to/images")
-#   loader = DataLoader(dataset, batch_size=32, shuffle=True, num_workers=4)
+        if self.return_distance:
+            distance = torch.tensor(row['distance'], dtype=torch.float32)
+            return img1, img2, label, distance
+        else:
+            return img1, img2, label

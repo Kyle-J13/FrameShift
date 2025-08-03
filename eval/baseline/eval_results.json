@@ -1,0 +1,57 @@
+{
+  "classification": {
+    "hard_pos": {
+      "accuracy": 0.903558798228566,
+      "avg_confidence": 0.897688145319602,
+      "count": 31387
+    },
+    "easy_pos": {
+      "accuracy": 0.9285576737916426,
+      "avg_confidence": 0.9221062513947773,
+      "count": 5193
+    },
+    "hard_neg": {
+      "accuracy": 0.9714285714285714,
+      "avg_confidence": 0.9709767846423771,
+      "count": 280
+    },
+    "easy_neg": {
+      "accuracy": 0.972972972972973,
+      "avg_confidence": 0.9541208496243619,
+      "count": 37
+    },
+    "other_neg": {
+      "accuracy": 0.9712103245732565,
+      "avg_confidence": 0.969036763598856,
+      "count": 36263
+    },
+    "ROC_AUC": 0.989195860627082,
+    "PR_AUC": 0.9886290255924215,
+    "F1": 0.937146084869025,
+    "cube_pos_accuracy": {
+      "6": {
+        "positive_accuracy": 0.9472222222222222,
+        "count": 4680
+      },
+      "7": {
+        "positive_accuracy": 0.9283088235294118,
+        "count": 16320
+      },
+      "8": {
+        "positive_accuracy": 0.8728498074454428,
+        "count": 15580
+      }
+    }
+  },
+  "retrieval": {
+    "Recall@1": 0.697,
+    "Recall@5": 0.86821875,
+    "mAP": 0.30355041340211447,
+    "MRR": 0.7734248208508506,
+    "nDCG@5": 0.5387953158725557
+  },
+  "spearman": {
+    "rho": 0.07608793316976437,
+    "p_value": 2.5587018967687653e-14
+  }
+}

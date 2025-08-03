@@ -1,16 +1,26 @@
 # train_baseline.py
-# -------------------
-# Training script for the baseline model:
-# - Loads training data via data_loader.py
-#   -Use ShapePairDataset and wrap with torch utils DataLoader
-# - Loads model from baseline_model.py
-# - Defines optimizer, loss function (binary cross entropy)
-# - Runs training loop:
-#     - MAKE SURE dataLoader retunrs batch tensors
-#     - Forward pass, compute loss, backpropagation, optimization
-#     - Logs loss and accuracy per epoch
-#     - Output loss over time
-# - SAVES MODEL weight checkpoints and training logs
+# ------------------
+# Training script for the baseline Siamese model.
+#
+# Overview:
+# Trains a ResNet-based Siamese network on image pairs for binary classification.
+# Handles data loading, optimization, checkpointing, and logging.
+#
+# Description:
+# - Uses ShapePairDataset to load labeled image pairs
+# - Optimizes binary cross entropy loss between predicted similarity and ground truth
+# - Saves model weights and logs to a checkpoint directory
+#
+# Example:
+#   trainer = Trainer(
+#       pair_file='data/processed/pairs_train.jsonl',
+#       image_dir='data/raw',
+#       batch_size=32,
+#       num_epochs=10,
+#       learning_rate=1e-4,
+#       checkpoint_dir='checkpoints'
+#   )
+#   trainer.train()
 
 import os
 import glob
@@ -37,7 +47,17 @@ class Trainer:
         checkpoint_dir='checkpoints',
         device=None
     ):
-        # Store hyperparameters and paths
+        
+    # Args:
+    #   pair_file (str): Path to pair file (JSONL)
+    #   image_dir (str): Root directory with shape images
+    #   batch_size (int): Batch size for training
+    #   num_epochs (int): Number of training epochs
+    #   learning_rate (float): Initial learning rate
+    #   checkpoint_dir (str): Output directory for checkpoints/logs
+    #   device (torch.device or None): Training device
+
+
         self.pair_file = pair_file
         self.image_dir = image_dir
         self.batch_size = batch_size
@@ -46,14 +66,13 @@ class Trainer:
         self.checkpoint_dir = checkpoint_dir
         self.device = device or torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-        # Ensure checkpoint directory exists
         os.makedirs(self.checkpoint_dir, exist_ok=True)
         self.checkpoint_log_path = os.path.join(self.checkpoint_dir, "model_checkpoints.tsv")
 
-        # Prepare data loaders, model, loss, optimizer, and logs
         self._setup()
 
     def _setup(self):
+        # Prepares data loader, model, optimizer, and logging paths
         print("[INFO] Loading dataset and building DataLoader...")
         dataset = ShapePairDataset(pairs_file=self.pair_file, image_dir=self.image_dir)
         self.train_loader = DataLoader(
@@ -62,23 +81,21 @@ class Trainer:
         )
 
         print("[INFO] Initializing model and training components...")
-        # Model without final Sigmoid layer
+
         self.model = SiameseResNet(pretrained=True).to(self.device)
         self.criterion = nn.BCELoss()
         self.optimizer = optim.Adam(self.model.parameters(), lr=self.learning_rate)
 
-        # Prepare logs
         self.train_losses = []
         self.train_accuracies = []
         self.train_recalls = []
 
-        # Write header for checkpoint log if it doesn't already exist
         if not os.path.exists(self.checkpoint_log_path):
             with open(self.checkpoint_log_path, "w") as f:
                 f.write("epoch\tloss\taccuracy\trecall\n")
 
     def train(self):
-        # Resume from last checkpoint if available
+        # Runs training loop with optional checkpoint resumption
         existing = glob.glob(os.path.join(self.checkpoint_dir, "model_epoch*.pth"))
         if existing:
             done = [int(re.search(r"model_epoch(\d+)\.pth", os.path.basename(p)).group(1))
@@ -101,15 +118,13 @@ class Trainer:
             all_labels = []
             all_preds = []
 
-            # Iterate over batches with progress bar
-            for img1, img2, labels in tqdm(self.train_loader, desc=f"Epoch {epoch}/{self.num_epochs}"):
-                # Move to device
+            for img1, img2, labels, in tqdm(self.train_loader, desc=f"Epoch {epoch}/{self.num_epochs}"):
                 img1 = img1.to(self.device)
                 img2 = img2.to(self.device)
-                labels = labels.to(self.device).flatten()  # shape: (batch,)
+                labels = labels.to(self.device).flatten()  
 
                 # Forward pass
-                probs = self.model(img1, img2).flatten()  # probabilities in [0,1]
+                probs = self.model(img1, img2).flatten()
 
                 # Compute loss
                 loss = self.criterion(probs, labels)
@@ -119,10 +134,8 @@ class Trainer:
                 loss.backward()
                 self.optimizer.step()
 
-                # Accumulate loss
                 running_loss += loss.item()
 
-                # Predictions & metrics
                 preds = (probs > 0.5).float()
                 correct += (preds == labels).sum().item()
                 total += labels.size(0)
@@ -130,23 +143,19 @@ class Trainer:
                 all_labels.extend(labels.cpu().tolist())
                 all_preds.extend(preds.cpu().tolist())
 
-            # Epoch metrics
             epoch_loss = running_loss / len(self.train_loader)
             epoch_acc = correct / total
             epoch_recall = recall_score(all_labels, all_preds)
 
-            # Log metrics in memory
             self.train_losses.append(epoch_loss)
             self.train_accuracies.append(epoch_acc)
             self.train_recalls.append(epoch_recall)
 
             print(f"[Epoch {epoch}] Loss: {epoch_loss:.4f}, Acc: {epoch_acc:.4f}, Recall: {epoch_recall:.4f}")
 
-            # Save checkpoint
             ckpt_path = os.path.join(self.checkpoint_dir, f"model_epoch{epoch}.pth")
             torch.save(self.model.state_dict(), ckpt_path)
 
-            # Append to TSV log with debug print
             log_line = f"{epoch}\t{epoch_loss:.4f}\t{epoch_acc:.4f}\t{epoch_recall:.4f}\n"
             print(f"[DEBUG] Writing to log: {log_line.strip()}")
             with open(self.checkpoint_log_path, "a") as f:
@@ -154,13 +163,21 @@ class Trainer:
                 f.flush()
                 os.fsync(f.fileno())
 
-        # After training, plot metrics
         self._plot_metric(self.train_losses, 'Loss', 'Training Loss', 'loss_plot.png')
         self._plot_metric(self.train_accuracies, 'Accuracy', 'Training Accuracy', 'accuracy_plot.png')
         self._plot_metric(self.train_recalls, 'Recall', 'Training Recall', 'recall_plot.png')
         print("[INFO] Training complete. Metrics and checkpoints saved in:", self.checkpoint_dir)
 
     def _plot_metric(self, values, ylabel, title, filename):
+        # Args:
+        #   values (list[float]): Metric values per epoch
+        #   ylabel (str): Y-axis label
+        #   title (str): Plot title
+        #   filename (str): Output filename (saved in checkpoint dir)
+        #
+        # Returns:
+        #   None (saves plot to disk)
+
         plt.figure()
         plt.plot(values, label=ylabel)
         plt.xlabel('Epoch')

@@ -1,0 +1,69 @@
+{
+  "classification": {
+    "hard_pos": {
+      "accuracy": 0.9697645522031414,
+      "avg_confidence": 0.9590889732501231,
+      "count": 31387
+    },
+    "easy_pos": {
+      "accuracy": 0.9780473714615829,
+      "avg_confidence": 0.9700250665070057,
+      "count": 5193
+    },
+    "hard_neg": {
+      "accuracy": 0.9928571428571429,
+      "avg_confidence": 0.9831230963438949,
+      "count": 280
+    },
+    "easy_neg": {
+      "accuracy": 1.0,
+      "avg_confidence": 0.9959168493829517,
+      "count": 37
+    },
+    "other_neg": {
+      "accuracy": 0.9947053470479552,
+      "avg_confidence": 0.9886076331468283,
+      "count": 36263
+    },
+    "ROC_AUC": 0.9991371365321663,
+    "PR_AUC": 0.9991275471178407,
+    "F1": 0.9826119433954434,
+    "cube_pos_accuracy": {
+      "6": {
+        "positive_accuracy": 0.9801282051282051,
+        "count": 4680
+      },
+      "7": {
+        "positive_accuracy": 0.9765318627450981,
+        "count": 16320
+      },
+      "8": {
+        "positive_accuracy": 0.9623234916559692,
+        "count": 15580
+      }
+    }
+  },
+  "retrieval": {
+    "Recall@1": 0.95775,
+    "Recall@5": 0.9825625,
+    "mAP": 0.6462670523502054,
+    "MRR": 0.9689403765235606,
+    "nDCG@5": 0.8677056715277712
+  },
+  "spearman_structural": {
+    "rho": 0.07248877802118477,
+    "p_value": 3.9425096171104056e-13
+  },
+  "distance_regression": {
+    "MAE": 0.17297213714733903,
+    "RMSE": 0.23718207209390146,
+    "Pearson": {
+      "r": 0.8459989724365713,
+      "p_value": 0.0
+    },
+    "Spearman": {
+      "rho": 0.8109827796168088,
+      "p_value": 0.0
+    }
+  }
+}

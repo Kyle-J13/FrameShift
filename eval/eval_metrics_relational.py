@@ -1,20 +1,20 @@
-# eval_metrics.py
-# ----------------
-# Evaluation script for the baseline Siamese model.
+# eval_metrics_relational.py
+# --------------------------
+# Evaluation script for the relational Siamese model.
 #
 # Overview:
-# Evaluates classification and retrieval performance of the model on test data.
-# Computes per-category classification accuracy, retrieval quality, and alignment
-# between learned representations and shape similarity structure.
+# Evaluates classification, retrieval, structural alignment, and distance
+# regression performance of the relational Siamese model on test pairs.
 #
 # Description:
-# - Loads the most recent checkpoint of the trained baseline model
-# - Evaluates classification accuracy across several positive/negative pair types
-# - Computes ROC AUC, PR AUC, and F1 score globally
-# - Breaks down classification performance by shape complexity (cube count)
-# - Computes retrieval quality using Recall@K, mAP, MRR, nDCG@5
-# - Computes Spearman correlation between embedding distance and structural similarity
-# - Saves results to eval/baseline/eval_results.json
+# - Loads the most recent relational model checkpoint
+# - Evaluates classification metrics across hard/easy positives/negatives
+# - Computes global classification curves: ROC AUC, PR AUC, F1 score
+# - Breaks down positive accuracy by cube count
+# - Computes retrieval metrics: Recall@1, Recall@5, mAP, MRR, nDCG@5
+# - Computes structural similarity Spearman correlation
+# - Computes distance regression metrics: MAE, RMSE, Pearson r/p, Spearman rho/p
+# - Saves all metrics to eval/relational/eval_results.json
 #
 # Metrics:
 #
@@ -27,8 +27,8 @@
 #       accuracy        - proportion of correct negative classifications
 #       avg_confidence  - average model confidence on negative predictions
 #       count           - number of negative test examples by category
-#   - ROC_AUC           - Area Under ROC Curve for all test pairs
-#   - PR_AUC            - Area Under Precision-Recall Curve
+#   - ROC_AUC           - area under ROC curve for all test pairs
+#   - PR_AUC            - area under precision-recall curve
 #   - F1                - F1 score using threshold of 0.5
 #   - cube_pos_accuracy:
 #       {cube_count}:   - positive accuracy broken down by shape complexity
@@ -45,8 +45,19 @@
 #                         and structural similarity across shape neighborhoods
 #   - p_value           - statistical significance of correlation
 #
+# distance_regression:
+#   - MAE               - mean absolute error between true and predicted distances
+#   - RMSE              - root mean squared error between true and predicted distances
+#   - Pearson:
+#       r               - Pearson correlation coefficient between true and predicted distances
+#       p_value         - statistical significance of Pearson correlation
+#   - Spearman:
+#       rho             - Spearman correlation coefficient between true and predicted distances
+#       p_value         - statistical significance of distance Spearman correlation
+#
 # Example:
-#   python eval_metrics.py
+#   python eval_metrics_relational.py
+
 
 import os
 import sys
@@ -61,34 +72,33 @@ import torch
 from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms
 from PIL import Image
-from scipy.stats import spearmanr
+from scipy.stats import spearmanr, pearsonr
 from sklearn.metrics import (
     roc_auc_score,
     average_precision_score,
     f1_score,
-    ndcg_score
+    ndcg_score,
+    mean_absolute_error,
+    mean_squared_error
 )
 from tqdm.auto import tqdm
 
-# ensure repo root is on PYTHONPATH
 script_dir = Path(__file__).resolve().parent
-repo_root = script_dir.parent
+repo_root  = script_dir.parent
 sys.path.insert(0, str(repo_root))
 
-from models.baseline_model import SiameseResNet
+from models.relational_model import SiameseRelational
 
-# parameters (adjust as needed)
 RAW_IMAGE_DIR = repo_root / 'data' / 'raw'
 AUG_META = repo_root / 'data' / 'raw' / 'metadata_augmented.jsonl'
-TEST_PAIRS = repo_root / 'data' / 'processed' / 'pairs_test.jsonl'
-CHECKPOINT_DIR = repo_root / 'train' / 'checkpoints' / 'baseline'
-OUTPUT_PATH = repo_root / 'eval' / 'baseline' / 'eval_results.json'
+TEST_PAIRS = repo_root / 'data' / 'processed' / 'pairs_test_dist.jsonl'
+CHECKPOINT_DIR = repo_root / 'train' / 'checkpoints' / 'relational'
+OUTPUT_PATH = repo_root / 'eval' / 'relational' / 'eval_results.json'
 
 BATCH_SIZE = 256
 NUM_WORKERS = 4
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-# image preprocessing (same as train)
 transform = transforms.Compose([
     transforms.Resize(256),
     transforms.CenterCrop(224),
@@ -97,30 +107,20 @@ transform = transforms.Compose([
 ])
 
 class PairDataset(Dataset):
-    # Dataset for image pair classification
     def __init__(self, pairs_file):
-        # Args:
-        #   pairs_file (str): path to JSONL file with img1, img2, label fields
         import pandas as pd
         self.df = pd.read_json(pairs_file, lines=True)
-
     def __len__(self):
-        # Returns:
-        #   int: number of image pairs
         return len(self.df)
-
     def __getitem__(self, idx):
-        # Args:
-        #   idx (int): index of the pair
-        # Returns:
-        #   img1 (Tensor), img2 (Tensor), fn1 (str), fn2 (str), label (int)
         row = self.df.iloc[idx]
         fn1 = row['img1']
         fn2 = row['img2']
         label = int(row['label'])
+        distance = float(row['distance'])
         img1 = transform(Image.open(RAW_IMAGE_DIR / fn1).convert('RGB'))
         img2 = transform(Image.open(RAW_IMAGE_DIR / fn2).convert('RGB'))
-        return img1, img2, fn1, fn2, label
+        return img1, img2, fn1, fn2, label, distance
 
 def main():
     freeze_support()
@@ -133,17 +133,16 @@ def main():
             fn = rec['filename']
             sid = rec['shape_id']
             aug_map[fn] = rec
-            # structural sim to nearest neighbors
             if sid not in shape_struct_sim:
                 for nb in rec['most_similar']:
                     shape_struct_sim[sid][nb['id']] = nb['sim']
 
     ckpts = glob.glob(str(CHECKPOINT_DIR / 'model_epoch*.pth'))
     if not ckpts:
-        print("ERROR: no checkpoint found")
+        print("[ERROR]: no checkpoint found")
         sys.exit(1)
-    latest = max(ckpts, key=lambda p: int(Path(p).stem.replace('model_epoch', '')))
-    model = SiameseResNet(pretrained=False).to(DEVICE)
+    latest = max(ckpts, key=lambda p: int(Path(p).stem.replace('model_epoch','')))
+    model = SiameseRelational(pretrained=False).to(DEVICE)
     model.load_state_dict(torch.load(latest, map_location=DEVICE))
     model.eval()
 
@@ -158,8 +157,10 @@ def main():
     pos_counts_by_c = defaultdict(int)
     pos_correct_by_c = defaultdict(int)
 
+    y_dist_true = []
+    y_dist_pred = []
+
     def rot_diff(r1, r2):
-        # sum of minimal angle diffs across axes
         return sum(abs(((r1[i] - r2[i] + 180) % 360) - 180) for i in range(3))
 
     loader = DataLoader(
@@ -170,27 +171,35 @@ def main():
         pin_memory = True
     )
 
-    print("[INFO] Classifying test pairs...")
-    for img1, img2, fn1s, fn2s, labels in tqdm(loader, desc="Eval Pairs"):
+    print("[INFO] Evaluating test pairs")
+    for img1, img2, fn1s, fn2s, labels, distances in tqdm(loader, desc="Eval Pairs"):
         img1, img2 = img1.to(DEVICE), img2.to(DEVICE)
-        with torch.no_grad():
-            probs = model(img1, img2).flatten().cpu().numpy()
-        preds = (probs > 0.5).astype(int)
         labels = labels.numpy()
+        distances = distances.numpy()
+
+        with torch.no_grad():
+            sim_logits, dist_pred, _ = model(img1, img2)
+            sim_logits = sim_logits.flatten().cpu()
+            dist_pred = dist_pred.flatten().cpu().numpy()
+            probs = torch.sigmoid(sim_logits).numpy()
+
+        preds = (probs > 0.5).astype(int)
 
         y_true_all.extend(labels.tolist())
         y_prob_all.extend(probs.tolist())
 
-        for fn1, fn2, lab, prob, pred in zip(fn1s, fn2s, labels, probs, preds):
+        y_dist_true.extend(distances.tolist())
+        y_dist_pred.extend(dist_pred.tolist())
+
+        for fn1, fn2, lab, prob, pred, true_d in zip(fn1s, fn2s, labels, probs, preds, distances):
             rec1, rec2 = aug_map[fn1], aug_map[fn2]
             sid1, sid2 = rec1['shape_id'], rec2['shape_id']
 
             if lab == 1:
                 d = rot_diff(rec1['rotation'], rec2['rotation'])
                 cat = 'hard_pos' if d > ROT_THRESH else 'easy_pos'
-                # cube_count breakdown
                 c = rec1['num_cubes']
-                pos_counts_by_c[c] += 1
+                pos_counts_by_c[c]  += 1
                 if pred == lab:
                     pos_correct_by_c[c] += 1
             else:
@@ -220,16 +229,13 @@ def main():
                 'count': counts[cat]
             }
 
-    # global ROC AUC, PR AUC, F1
     roc_auc = roc_auc_score(y_true_all, y_prob_all)
-    pr_auc = average_precision_score(y_true_all, y_prob_all)
-    preds_05 = [1 if p > 0.5 else 0 for p in y_prob_all]
-    f1 = f1_score(y_true_all, preds_05)
+    pr_auc  = average_precision_score(y_true_all, y_prob_all)
+    f1 = f1_score(y_true_all, np.array(y_prob_all) > 0.5)
     metrics['classification']['ROC_AUC'] = roc_auc
     metrics['classification']['PR_AUC'] = pr_auc
     metrics['classification']['F1'] = f1
 
-    # positive accuracy by cube count
     cube_pos = {}
     for c in sorted(pos_counts_by_c):
         cube_pos[c] = {
@@ -238,12 +244,12 @@ def main():
         }
     metrics['classification']['cube_pos_accuracy'] = cube_pos
 
-    # retrieval metrics
     print("[INFO] Computing retrieval metrics")
     view_files = list(aug_map.keys())
     emb_map = {}
     for fn in tqdm(view_files, desc="Embed views"):
-        img = transform(Image.open(RAW_IMAGE_DIR / fn).convert('RGB')).to(DEVICE).unsqueeze(0)
+        img = transform(Image.open(RAW_IMAGE_DIR / fn).convert('RGB')) \
+                  .to(DEVICE).unsqueeze(0)
         with torch.no_grad():
             fmap = model.encoder(img)
             emb = fmap.mean(dim=[2, 3]).view(1, -1).cpu().numpy()
@@ -257,7 +263,6 @@ def main():
     np.fill_diagonal(dist_mat, np.inf)
 
     def recall_at_k(k):
-        # Computes recall at rank k
         hits = 0
         for i, sid in enumerate(all_ids):
             nn_idx = np.argsort(dist_mat[i])[:k]
@@ -268,26 +273,18 @@ def main():
     r1 = recall_at_k(1)
     r5 = recall_at_k(5)
 
-    # compute mAP, MRR, nDCG@5 while
-    APs = []
-    MRRs = []
-    nDCGs = []
+    APs, MRRs, nDCGs = [], [], []
     all_ids_arr = np.array(all_ids)
     N = len(all_ids)
     for i, sid in enumerate(all_ids):
         mask = np.arange(N) != i
-        true_masked = (all_ids_arr[mask] == sid).astype(int)
+        true_masked  = (all_ids_arr[mask] == sid).astype(int)
         scores_masked = -dist_mat[i, mask]
 
-        # average precision
-        APs.append(average_precision_score(true_masked, scores_masked))
-
-        # reciprocal rank
+        APs. append(average_precision_score(true_masked, scores_masked))
         order = np.argsort(dist_mat[i, mask])
         rank = np.where(true_masked[order] == 1)[0][0] + 1
         MRRs.append(1.0 / rank)
-
-        # nDCG@5
         nDCGs.append(ndcg_score([true_masked], [scores_masked], k=5))
 
     metrics['retrieval'] = {
@@ -299,23 +296,35 @@ def main():
     }
 
     # structural Spearman correlation
-    print("[INFO] Computing Spearman correlation")
+    print("[INFO] Computing structural Spearman correlation")
     shape_emb = defaultdict(list)
     for fn, emb in emb_map.items():
         sid = aug_map[fn]['shape_id']
         shape_emb[sid].append(emb)
     shape_mean = {sid: np.mean(es, axis=0) for sid, es in shape_emb.items()}
 
-    edists = []
-    ssims = []
+    edists, ssims = [], []
     for sid, neigh in shape_struct_sim.items():
         for nb, sim in neigh.items():
-            e1 = shape_mean[sid]
-            e2 = shape_mean[nb]
+            e1, e2 = shape_mean[sid], shape_mean[nb]
             edists.append(np.linalg.norm(e1 - e2))
             ssims.append(sim)
-    rho, pval = spearmanr(edists, ssims)
-    metrics['spearman'] = {'rho': rho, 'p_value': pval}
+    rho_s, p_s = spearmanr(edists, ssims)
+    metrics['spearman_structural'] = {'rho': rho_s, 'p_value': p_s}
+
+    # distance regression metrics
+    print("[INFO] Computing distance regression metrics")
+    mae = mean_absolute_error(y_dist_true, y_dist_pred)
+    mse = mean_squared_error(y_dist_true, y_dist_pred)
+    rmse = np.sqrt(mse)
+    r_p, p_p = pearsonr(y_dist_true, y_dist_pred)
+    rho_d, p_d = spearmanr(y_dist_true, y_dist_pred)
+    metrics['distance_regression'] = {
+        'MAE': mae,
+        'RMSE': rmse,
+        'Pearson': {'r': r_p, 'p_value': p_p},
+        'Spearman': {'rho': rho_d, 'p_value': p_d}
+    }
 
     OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     print("[INFO] Saving metrics to", OUTPUT_PATH)

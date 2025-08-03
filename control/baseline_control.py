@@ -1,15 +1,21 @@
 # baseline_control.py
 # -------------------
-# Control script for data preprocessing and model training for our baseline
-# - Splits metadata into train/test sets (if not already split)
-# - Generates positive/negative pairs (if not already generated)
-# - Trains or resumes training the baseline model
+# Main control script for preprocessing and training the baseline model.
+#
+# Overview:
+# Handles train/test splitting, pair generation, and model training.
+#
+# Description:
+# - Splits metadata into train/test sets using shape-level grouping
+# - Generates positive/negative training pairs from metadata
+# - Resumes training if checkpoint exists, otherwise starts from scratch
+#
+# Example:
+#   python baseline_control.py
 
-# Remove warnings from terminal for clarity
 import warnings
 warnings.filterwarnings("ignore")
 
-# Imports
 import os
 import sys
 import json
@@ -17,7 +23,7 @@ import glob
 from pathlib import Path
 from sklearn.model_selection import train_test_split
 
-# Handle Pathing for Other Imports
+# Set repo root and path imports
 script_dir = Path(__file__).resolve().parent
 repo_root = script_dir.parent
 sys.path.insert(0, str(repo_root))
@@ -26,7 +32,7 @@ sys.path.insert(0, str(repo_root / 'train'))
 from utils.pair_generator import PairGen
 from train_baseline import Trainer
 
-# Paths
+# File paths
 RAW_METADATA = repo_root / 'data' / 'raw' / 'metadata.jsonl'
 AUG_META = repo_root / 'data' / 'raw' / 'metadata_augmented.jsonl'
 RAW_IMAGE_DIR = repo_root / 'data' / 'raw'
@@ -46,7 +52,10 @@ LEARNING_RATE = 0.0001
 SEED = 42
 
 def ensure_split():
-    # skip if splits already exist
+    # Splits augmented metadata into train/test shape groups based on neighbors
+    #
+    # Returns:
+    #   Writes TRAIN_META and TEST_META if they don't already exist
     if TRAIN_META.exists() and TEST_META.exists():
         print("[INFO] Train/test metadata already exists, skipping split")
         return
@@ -57,7 +66,7 @@ def ensure_split():
     import random
     random.seed(SEED)
 
-    # build map of shape_id -> its top-5 most_similar neighbors
+    # shape_id -> top 5 similar shape IDs
     shape_neighbors = {}
     with open(AUG_META, 'r') as f:
         for line in f:
@@ -69,10 +78,9 @@ def ensure_split():
     all_shapes = list(shape_neighbors.keys())
     random.shuffle(all_shapes)
 
-    total_shapes   = len(all_shapes)
+    total_shapes = len(all_shapes)
     test_shape_ids = set()
 
-    # pull out each shape plus its neighbors until TEST_SIZE fraction is held out
     for sid in all_shapes:
         if len(test_shape_ids) / total_shapes >= TEST_SIZE:
             break
@@ -82,10 +90,8 @@ def ensure_split():
         test_shape_ids.update(group)
 
     held = len(test_shape_ids)
-    print(f"[INFO] Holding out {held} shapes "
-          f"({held}/{total_shapes} ≈ {held/total_shapes:.2%})")
+    print(f"[INFO] Holding out {held} shapes ({held}/{total_shapes} ≈ {held/total_shapes:.2%})")
 
-    # split view metadata by shape_id
     with open(RAW_METADATA, 'r') as fin, \
          open(TRAIN_META, 'w') as fout_tr, \
          open(TEST_META, 'w') as fout_te:
@@ -99,7 +105,10 @@ def ensure_split():
     print("[INFO] Wrote train/test splits")
 
 def ensure_pairs():
-    # Generate train/test pairs if missing
+    # Ensures training/test pairs exist by running pair generation if needed
+    #
+    # Returns:
+    #   Writes TRAIN_PAIRS and TEST_PAIRS if missing
     generated = False
 
     if not TRAIN_PAIRS.exists():
@@ -126,13 +135,13 @@ def ensure_pairs():
         print("[INFO] Pair files already exist, skipping generation")
 
 def main():
-    # Split metadata
+    # Full baseline training pipeline:
+    #   1. Split metadata if needed
+    #   2. Generate train/test pairs
+    #   3. Resume or start training the baseline model
     ensure_split()
-
-    # Generate pairs
     ensure_pairs()
 
-    # Train or resume
     CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
     existing_ckpts = glob.glob(str(CHECKPOINT_DIR / 'model_epoch*.pth'))
     if existing_ckpts:
@@ -142,7 +151,6 @@ def main():
     else:
         print("[INFO] Starting training from scratch")
 
-    # Instantiate trainer
     trainer = Trainer(
         pair_file=str(TRAIN_PAIRS),
         image_dir=str(RAW_IMAGE_DIR),
@@ -153,6 +161,5 @@ def main():
     )
     trainer.train()
 
-# Main
 if __name__ == '__main__':
     main()
