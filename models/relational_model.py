@@ -78,6 +78,9 @@ class SiameseRelational(nn.Module):
             batch_first=True
         )
 
+        self.token_norm = nn.LayerNorm(self.feature_dim)   # stabilize token scales to prevent one token from dominating attnetion
+        self.global_mix = nn.Parameter(torch.tensor(-1.4)) # keeps local dominant
+
         # proj_head: projection for NT-Xent loss
         self.proj_head = nn.Sequential(
             nn.Linear(self.feature_dim * 2, 128),
@@ -89,7 +92,7 @@ class SiameseRelational(nn.Module):
         # collapse aggregated attention features to a scalar logit
         self.local_head = nn.Linear(self.feature_dim, 1)
 
-    def forward(self, img1, img2):
+    def forward(self, img1, img2, return_attention=False):
         # Args:
         #   img1, img2 (Tensor): batches of images, shape [B, 3, H, W]
         # Returns:
@@ -100,17 +103,23 @@ class SiameseRelational(nn.Module):
         # encode images to feature maps [B, C, h, w]
         f1 = self.encoder(img1)
         f2 = self.encoder(img2)
-
         B, C, h, w = f1.size()
         N = h * w
 
-        # reshape to sequences of local features [B, N, C]
+        # flatten ->[B, N, C]
         f1 = f1.view(B, C, N).permute(0, 2, 1)
         f2 = f2.view(B, C, N).permute(0, 2, 1)
 
+        # stabilize token scales
+        f1 = self.token_norm(f1) 
+        f2 = self.token_norm(f2)
+
         # cross-attention: each local vector in f1 attends to f2
         # attn_out has shape [B, N, C]
-        attn_out, _ = self.cross_attn(query=f1, key=f2, value=f2)
+        attn_out, attn_w = self.cross_attn(
+            query=f1, key=f2, value=f2,
+            need_weights=True, average_attn_weights=False
+        ) 
 
         # aggregate across spatial locations
         if self.aggregation == 'sum':
@@ -122,15 +131,12 @@ class SiameseRelational(nn.Module):
         local_logit = self.local_head(agg)  # [B, 1]
 
         # global pooled features
-        g1 = f1.mean(dim=1)  # [B, C]
-        g2 = f2.mean(dim=1)  # [B, C]
-        global_feat = torch.cat([g1, g2], dim=1)  # [B, 2C]
+        g1 = f1.mean(dim=1); g2 = f2.mean(dim=1)
+        global_feat  = torch.cat([g1, g2], dim=1)
+        global_logit = self.global_head(global_feat)
 
-        # global similarity logit
-        global_logit = self.global_head(global_feat)  # [B, 1]
-
-        # final similarity is sum of local and global logits
-        sim = local_logit + global_logit  # [B, 1]
+        alpha = torch.sigmoid(self.global_mix)
+        sim = local_logit + alpha * global_logit
 
         # distance prediction
         dist = self.dist_head(global_feat)  # [B, 1]
@@ -138,4 +144,6 @@ class SiameseRelational(nn.Module):
         # contrastive embedding
         cont_emb = self.proj_head(global_feat)  # [B, 64]
 
+        if return_attention:
+            return sim, dist, cont_emb, attn_w  
         return sim, dist, cont_emb
