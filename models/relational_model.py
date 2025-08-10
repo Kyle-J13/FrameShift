@@ -45,14 +45,6 @@ class SiameseRelational(nn.Module):
 
         self.feature_dim = base.fc.in_features
 
-        # relation_head: similarity from each pair of local feature vectors
-        self.relation_head = nn.Sequential(
-            nn.Linear(self.feature_dim * 2, relation_hidden_dim),
-            nn.ReLU(inplace=True),
-            nn.LayerNorm(relation_hidden_dim),
-            nn.Linear(relation_hidden_dim, 1)
-        )
-
         # global_head: similarity from global pooled features
         self.global_head = nn.Sequential(
             nn.Linear(self.feature_dim * 2, relation_hidden_dim),
